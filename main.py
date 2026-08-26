@@ -1,56 +1,66 @@
 import os
-import yt_dlp
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters, CallbackQueryHandler
+import threading
+from flask import Flask
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 
+# ستا د ټوکن له Render څخه راځي
 TOKEN = os.getenv("BOT_TOKEN")
 CHANNELS = ["@Sherona2", "@Rachel3427"]
 
-async def is_joined(context, user_id):
-    for ch in CHANNELS:
+# فیک ویب سرور د Render Free لپاره
+web_app = Flask(__name__)
+@web_app.route('/')
+def home():
+    return "Bot is Alive! Sherona Bot"
+
+def run_web():
+    port = int(os.environ.get("PORT", 10000))
+    web_app.run(host='0.0.0.0', port=port)
+
+# بوټ لوژیک
+async def is_joined(user_id, context):
+    for channel in CHANNELS:
         try:
-            m = await context.bot.get_chat_member(ch, user_id)
-            if m.status in ['left','kicked']: return False, ch
-        except: return False, ch
-    return True, None
+            member = await context.bot.get_chat_member(chat_id=channel, user_id=user_id)
+            if member.status in ['left', 'kicked']:
+                return False
+        except:
+            return False
+    return True
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    ok, ch = await is_joined(context, update.effective_user.id)
-    if not ok:
-        kb = [[InlineKeyboardButton(f"Join {ch}", url=f"https://t.me/{ch.replace('@','')}")],
-              [InlineKeyboardButton("✅ Check", callback_data="check")]]
-        await update.message.reply_text(f"اول در {ch} جوین شو جانک!", reply_markup=InlineKeyboardMarkup(kb))
-        return
-    await update.message.reply_text("سلام جانک! لینک تیک تاک بفرست 🎥")
+    user_id = update.effective_user.id
+    if await is_joined(user_id, context):
+        await update.message.reply_text("سلام جانک! 😍 بوټ ته ښه راغلې، اوس فعال دی!")
+    else:
+        keyboard = []
+        for ch in CHANNELS:
+            keyboard.append([InlineKeyboardButton(f"Join {ch}", url=f"https://t.me/{ch.replace('@','')}")])
+        keyboard.append([InlineKeyboardButton("✅ Check شوم", callback_data="check")])
+        await update.message.reply_text(
+            "جانک لومړی په دې چینلونو کې Join شه 👇",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
 
-async def check_btn(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer()
-    ok, ch = await is_joined(context, update.callback_query.from_user.id)
-    if ok: await update.callback_query.message.edit_text("عالی! حالا لینک بفرست جانک ✅")
-    else: await update.callback_query.answer(f"هنوز در {ch} جوین نشدی!", show_alert=True)
+async def check_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    if await is_joined(user_id, context):
+        await query.edit_message_text("آفرین جانک! ✅ اوس بوټ فعال شو!")
+    else:
+        await query.answer("لا هم Join نه یې شوی جانک!", show_alert=True)
 
-async def dl(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    ok, ch = await is_joined(context, update.effective_user.id)
-    if not ok:
-        await start(update, context)
-        return
-    url = update.message.text
-    if "tiktok.com" not in url:
-        await update.message.reply_text("لینک تیک تاک بفرست جانک!")
-        return
-    await update.message.reply_text("دارم دانلود میکنم جانک...⏳")
-    try:
-        opts = {'format':'mp4','outtmpl':'video.mp4','quiet':True}
-        with yt_dlp.YoutubeDL(opts) as ydl: ydl.download([url])
-        with open("video.mp4","rb") as v:
-            await context.bot.send_video(update.effective_chat.id, v, caption="بیا جانک 😍 @Sherona2")
-        os.remove("video.mp4")
-    except Exception as e:
-        await update.message.reply_text(f"خطا: {e}")
+def main():
+    # ویب سرور په بل تریډ کې چالان کړه
+    threading.Thread(target=run_web).start()
+    
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(check_button, pattern="check"))
+    print("Bot is running...")
+    app.run_polling()
 
-app = ApplicationBuilder().token(TOKEN).build()
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CallbackQueryHandler(check_btn))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, dl))
-print("Bot Running...")
-app.run_polling()
+if __name__ == "__main__":
+    main()
