@@ -1,2 +1,2 @@
-`requpython-telegram-bot==20.7
-yt-dlpirements.txt`requirements.txt
+python-telegram-bot==20.7
+yt-dlp
