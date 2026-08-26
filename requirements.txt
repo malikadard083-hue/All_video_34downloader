@@ -1,0 +1,2 @@
+`requpython-telegram-bot==20.7
+yt-dlpirements.txt`requirements.txt
