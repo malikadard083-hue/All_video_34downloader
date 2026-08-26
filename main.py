@@ -1,57 +1,72 @@
 import os
-import tempfile
-import yt_dlp
+import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+import yt_dlp
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
+# تنظیمات
+TOKEN = os.getenv("BOT_TOKEN")
 CHANNELS = ["@Sherona2", "@Rachel3427"]
 
-async def check_join(update, context):
+logging.basicConfig(level=logging.INFO)
+
+async def check_join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     for ch in CHANNELS:
         try:
-            m = await context.bot.get_chat_member(ch, user_id)
-            if m.status in ['left','kicked']:
+            member = await context.bot.get_chat_member(ch, user_id)
+            if member.status in ['left', 'kicked']:
+                keyboard = [
+                    [InlineKeyboardButton(f"Join {ch}", url=f"https://t.me/{ch.replace('@','')}")],
+                    [InlineKeyboardButton("✅ Check کردم", callback_data="check")]
+                ]
+                await update.message.reply_text(
+                    f"جانک اول باید در {ch} جوین شی! 😊",
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
                 return False
         except:
-            return False
+            pass
     return True
 
-async def start(update, context):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_join(update, context):
-        btn = [[InlineKeyboardButton("Join @Sherona2", url="https://t.me/Sherona2")],[InlineKeyboardButton("Join @Rachel3427", url="https://t.me/Rachel3427")],[InlineKeyboardButton("✅ Joined", callback_data="check")]]
-        await update.message.reply_text("لومړی جوین شه!", reply_markup=InlineKeyboardMarkup(btn))
         return
-    await update.message.reply_text("لینک راولیږه! پرته له واټرمارک ډانلوډ کوم ✅")
+    await update.message.reply_text("سلام جانک! لینک تیک تاک را بفرست تا دانلود کنم! 🎥")
 
-async def check_cb(update, context):
-    q = update.callback_query
-    await q.answer()
-    if await check_join(update, context):
-        await q.edit_message_text("مننه! اوس لینک راولیږه ✅")
-    else:
-        await q.answer("لا جوین نه یې!", show_alert=True)
-
-async def download(update, context):
+async def download_tiktok(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await check_join(update, context):
-        return await start(update, context)
+        return
+    
     url = update.message.text
-    if "http" not in url: return
-    msg = await update.message.reply_text("⏳ ډانلوډ کوم...")
+    if "tiktok.com" not in url:
+        await update.message.reply_text("لطفا یک لینک تیک تاک بفرست جانک!")
+        return
+    
+    await update.message.reply_text("صبر جانک، دارم دانلود میکنم... ⏳")
+    
     try:
-        with tempfile.TemporaryDirectory() as tmp:
-            opts = {'outtmpl': f'{tmp}/%(title)s.%(ext)s','format':'best','quiet':True}
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                file = ydl.prepare_filename(info)
-            await update.message.reply_video(video=open(file,'rb'), caption="✅ @Sherona2")
-            await msg.delete()
+        ydl_opts = {
+            'format': 'best',
+            'outtmpl': '%(id)s.%(ext)s',
+            'quiet': True,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            filename = ydl.prepare_filename(info)
+        
+        with open(filename, 'rb') as f:
+            await context.bot.send_video(chat_id=update.effective_chat.id, video=f, caption="بیا جانک، دانلود شد! 😍 @Sherona2")
+        os.remove(filename)
     except Exception as e:
-        await msg.edit_text(f"ایرر: {e}")
+        await update.message.reply_text(f"خطا جانک: {e}")
 
-app = Application.builder().token(BOT_TOKEN).build()
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CallbackQueryHandler(check_cb, pattern="check"))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download))
-app.run_polling()
+def main():
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_tiktok))
+    print("Bot started...")
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
